@@ -258,11 +258,15 @@ The version fixes one prompt/scoring configuration so implementations can stay c
 
 ## Gymnasium control notebook
 
-Open [Ollama_Jev_Gymnasium.ipynb](notebooks/Ollama_Jev_Gymnasium.ipynb) in local Jupyter to test CartPole, Pendulum, and HalfCheetah running. The notebook includes seeded baseline comparisons, episode rewards, request latency, decision logs, and video recording.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/vtavakkoli/simple-jev/blob/main/notebooks/Ollama_Jev_Gymnasium.ipynb)
 
-Start Ollama, install a model, and set `OLLAMA_MODEL` to its exact name. Run CartPole first; the optional HalfCheetah cell controls six joints using discrete torque levels. To compare native Simple Jev, start the HF server, configure `JEV_URL` and `JEV_MODEL`, and add `"jev"` to the methods.
+Open [Ollama_Jev_Gymnasium.ipynb](notebooks/Ollama_Jev_Gymnasium.ipynb), select a GPU runtime, and run all cells. The notebook installs the HF server, downloads `Qwen/Qwen3.5-0.8B`, and starts native Simple Jev on loopback inside the same Colab runtime. CPU execution is also supported. The existing filename is retained for link compatibility; Ollama and an external server are not required.
 
-The Ollama adapter generates structured JSON through `/api/chat`; it does **not** reproduce Simple Jev's logits-only inference. Simulation pauses during API requests, so video playback does not demonstrate real-time control. A general language model is not a trained locomotion policy; task performance must be measured.
+The notebook checks server readiness, shows one model decision, and compares native `/v1/classifier` control against seeded baselines, with episode rewards, request latency, decision logs, and video recording. CartPole is the default; Pendulum is available in the environment selector. Enable the optional HalfCheetah checkbox to test six-joint running with discrete torque levels.
+
+The server code is pinned to a recorded revision. Re-running the startup cell stops its previous child process before loading the model again. Inference runs locally in the runtime; installation and the first model download require internet access.
+
+Simulation pauses during API requests, so video playback does not demonstrate real-time control. A general language model is not a trained locomotion policy; task performance must be measured. The notebook includes a real inference probe for your run; no Qwen benchmark results are pre-filled.
 
 ## Testing
 
