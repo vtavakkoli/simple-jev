@@ -249,7 +249,7 @@ class PromptCompiler:
             # part of the proof; no text hash is trusted for reuse.
             first = plan.questions[0]
             candidates = []
-            for probe in ("", "\u241f"):
+            for probe in ("A", "Z"):
                 cache_messages = self._messages(
                     request,
                     system,
