@@ -18,7 +18,8 @@ source .venv/bin/activate
 pip install -e './hf-server[test]'
 simple-jev --model /path/to/downloaded/model --device auto \
   --dtype bfloat16 --max-model-len 32768 \
-  --max-batch-size 32 --max-batch-tokens 32768 --port 8000
+  --max-batch-size 32 --max-batch-tokens 32768 \
+  --prefix-cache-entries 8 --port 8000
 ```
 
 Or run the file directly from the checkout:
@@ -87,9 +88,19 @@ parallel. The seed cache remains unchanged. Results return in request order.
 
 Suffixes are grouped by length, bounded by both batch size and padded suffix
 token budget. Each suffix selects its own final logit position. Requests execute
-serially against the model; parallelism is within each request. Prefix reuse is
-within a request, with no persistent cross-request cache. The prefix itself is
-one forward and is not chunked by `--max-batch-tokens`.
+serially against the model; parallelism is within each request.
+
+For repeated classifier schemas, `--prefix-cache-entries N` enables a bounded
+LRU of exact-token KV seeds across requests. The compiler renders two distinct
+synthetic contexts and intersects both token streams with every real branch, so
+the reusable prefix cannot depend on caller context. The backend verifies the
+candidate against the real request prefix again before use. Cached seeds are
+never extended in place; request-specific work starts from a deep copy.
+
+Persistent caching is disabled by default (`0`) because each entry retains KV
+state on the model device. The normal request-local shared prefix remains active
+whether or not the persistent cache is enabled. The prefix itself is not chunked
+by `--max-batch-tokens`.
 
 ## Scope and validation
 
