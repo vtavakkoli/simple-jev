@@ -272,13 +272,18 @@ values), `probabilities` (nine values), `expected_score`, `variance`, and `entro
 | --- | --- |
 | `backend` | `transformers` |
 | `prefill_strategy` | `shared_prefix` |
-| `prefix_tokens` | Length of the shared prefix actually evaluated once. At least one token is left for each suffix, even for identical prompts. |
+| `prefix_tokens` | Logical request-level shared prefix length. At least one token is left for each suffix, even for identical prompts; persistent hits may avoid evaluating part of it. |
 | `suffix_batch_sizes` | Number of question/candidate branches in each suffix forward. |
 | `engine_forwards` | Prefix forward, if any, plus suffix forwards. These are model calls, not HTTP calls. |
 | `branch_prompt_tokens` | Sum of all complete branch lengths, including repeated prefixes. |
-| `computed_prompt_tokens` | Shared prefix length plus padded suffix tokens. |
-| `logical_prefill_tokens` | Shared prefix length plus unpadded suffix lengths. |
+| `computed_prompt_tokens` | Prefix tokens actually evaluated for this request plus padded suffix tokens. Persistent-cache hits exclude reused prefix tokens. |
+| `computed_prefix_tokens` | Prefix tokens actually evaluated for this request. |
+| `logical_prefill_tokens` | Shared prefix length plus unpadded suffix lengths, independent of persistent-cache hits. |
 | `padded_suffix_tokens` | Sum of batch size times maximum suffix length for each batch. |
+| `persistent_prefix_cache` | `disabled`, `unavailable`, `miss`, or `hit`. |
+| `persistent_prefix_tokens` | Exact-token context-independent prefix eligible for persistent reuse. |
+| `persistent_prefix_hit_tokens` | Prefix tokens served from a persistent KV entry for this request. |
+| `persistent_prefix_cache_entries` | Current number of entries in the backend LRU. |
 | `branch_output_tokens` | 0 |
 | `scored_positions` | Number of scoring branches. |
 | `backend_seconds` | Backend elapsed time inside model lock. |
@@ -305,8 +310,10 @@ The backend evaluates the exact common prefix once and copies its Transformers
 cache for each suffix batch. Suffixes are sorted by length, batched under
 `--max-batch-size` and the padded `--max-batch-tokens` budget, and reordered for
 response assembly. A single suffix larger than the token budget returns 422.
-The prefix forward itself is not chunked by this budget. There is no persistent
-cross-request prefix cache or continuous cross-request batching.
+The prefix forward itself is not chunked by this budget. Optional
+`--prefix-cache-entries N` persists a context-independent exact-token KV seed
+across requests. Entries are LRU-bounded, disabled by default, and consume
+model-device memory. There is no continuous cross-request batching.
 
 Client disconnects cancel the service task. An in-flight model forward cannot
 be immediately interrupted; the backend observes cancellation between forwards
@@ -364,6 +371,7 @@ These are process settings, not HTTP request fields. Both `simple-jev` and
 | `--max-batch-size` | `32` | Maximum suffix rows per model forward; must be positive. |
 | `--max-batch-tokens` | `32768` | Maximum padded suffix tokens per batch; must be positive. Does not chunk or limit the prefix forward. |
 | `--max-request-branches` | `100` | Positive expanded-branch cap per classifier request, subject to schema hard limits. |
+| `--prefix-cache-entries` | `0` | Exact context-independent KV prefix entries retained across requests. `0` disables; entries consume model-device memory. |
 | `--host` | `127.0.0.1` | Bind address. |
 | `--port` | `8000` | HTTP port. |
 | `-h`, `--help` | — | Print argument help and exit. |

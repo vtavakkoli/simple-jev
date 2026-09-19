@@ -112,6 +112,87 @@ async def test_cached_batches_match_independent_full_prompts(family):
     assert result.metrics["computed_prompt_tokens"] == 23
 
 
+async def test_persistent_prefix_cache_reuses_exact_context_independent_tokens():
+    """Reuse a static KV seed across requests without changing selected logits."""
+    import torch
+    from hf_server import Branch, CompiledRequest, HFBackend
+    from transformers import Qwen3Config, Qwen3ForCausalLM
+
+    torch.set_num_threads(2)
+    torch.manual_seed(11)
+    model = Qwen3ForCausalLM(
+        Qwen3Config(
+            vocab_size=64,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            head_dim=8,
+            max_position_embeddings=64,
+        )
+    ).eval()
+    backend = HFBackend(model, prefix_cache_entries=2)
+    static = [1, 2, 3, 4, 5]
+
+    first_sequences = [
+        static + [10, 11, 20],
+        static + [10, 11, 21],
+    ]
+    second_sequences = [
+        static + [12, 13, 22],
+        static + [12, 13, 23],
+    ]
+
+    def compile_sequences(sequences):
+        return CompiledRequest(
+            None,
+            [
+                Branch(str(i), ids, [30, 31], [], "")
+                for i, ids in enumerate(sequences)
+            ],
+            cache_prefix_ids=static,
+        )
+
+    calls = []
+    hook = model.register_forward_pre_hook(
+        lambda module, args, kwargs: calls.append(tuple(kwargs["input_ids"].shape)),
+        with_kwargs=True,
+    )
+    first = await backend.score(compile_sequences(first_sequences))
+    second = await backend.score(compile_sequences(second_sequences))
+    hook.remove()
+
+    # Miss: persistent seed + request-local extension + suffix batch.
+    # Hit: request-local extension + suffix batch; the static forward disappears.
+    assert calls == [(1, 5), (1, 2), (2, 1), (1, 2), (2, 1)]
+    assert first.metrics["persistent_prefix_cache"] == "miss"
+    assert first.metrics["persistent_prefix_hit_tokens"] == 0
+    assert first.metrics["computed_prefix_tokens"] == 7
+    assert first.metrics["computed_prompt_tokens"] == 9
+    assert second.metrics["persistent_prefix_cache"] == "hit"
+    assert second.metrics["persistent_prefix_hit_tokens"] == 5
+    assert second.metrics["computed_prefix_tokens"] == 2
+    assert second.metrics["computed_prompt_tokens"] == 4
+    assert second.metrics["logical_prefill_tokens"] == 9
+    assert second.metrics["persistent_prefix_cache_entries"] == 1
+
+    # Cached execution must remain numerically equivalent to a complete prompt.
+    with torch.inference_mode():
+        for result, sequences in [
+            (first, first_sequences),
+            (second, second_sequences),
+        ]:
+            for i, ids in enumerate(sequences):
+                expected = model(torch.tensor([ids])).logits[0, -1, [30, 31]]
+                np.testing.assert_allclose(
+                    result.logits[str(i)],
+                    expected.numpy(),
+                    atol=2e-6,
+                    rtol=2e-5,
+                )
+
+
 async def test_identical_prompts_and_single_branch():
     """Reserve the final scoring position even for identical prompts or a single leaf."""
     from hf_server import Branch, CompiledRequest, HFBackend

@@ -30,7 +30,8 @@ import os
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -89,6 +90,9 @@ class CompiledRequest:
 
     plan: PromptPlan
     branches: list[Branch]
+    # Exact token prefix proven independent of caller context. Backends may
+    # persist a KV snapshot for this prefix across requests when enabled.
+    cache_prefix_ids: list[int] = field(default_factory=list)
 
 
 def common_prefix(sequences):
@@ -120,6 +124,39 @@ class PromptCompiler:
         self.tokenizer = tokenizer
         self.max_tokens = max_tokens
         self.version = version
+
+    @staticmethod
+    def _messages(request, system, content, *, context_probe=None):
+        """Build one branch, optionally replacing caller context with probe text.
+
+        Probe renderings are used only to locate a conservative token boundary.
+        compile() intersects two distinct probes with every real branch before
+        exposing a persistent-cache candidate.
+        """
+        if request.messages is None:
+            state = request.state if context_probe is None else context_probe
+            return [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": f"State:\n{canonical(state)}\n\n" + content,
+                },
+            ]
+
+        messages = []
+        for message in request.messages:
+            item = message.model_dump(exclude_none=True)
+            if context_probe is not None:
+                # Preserve roles because chat templates may encode them, while
+                # replacing all caller-controlled conversation content.
+                item = {"role": item["role"], "content": context_probe}
+            messages.append(item)
+        if messages[0]["role"] == "system":
+            messages[0]["content"] = system + "\n" + messages[0]["content"]
+        else:
+            messages.insert(0, {"role": "system", "content": system})
+        messages.append({"role": "user", "content": content})
+        return messages
 
     def compile(self, request: ClassifierRequest, *, render_only=False):
         """Validate text input and compile one branch per shared-plan question.
@@ -156,23 +193,7 @@ class PromptCompiler:
             # State is JSON-serialized, including quotes around string states.
             # For chat, preserve turn boundaries and merge only a leading system
             # turn; the final selected question is always a new user message.
-            if request.messages is None:
-                messages = [
-                    {"role": "system", "content": system},
-                    {
-                        "role": "user",
-                        "content": f"State:\n{canonical(request.state)}\n\n" + content,
-                    },
-                ]
-            else:
-                # Dump into new dictionaries so adding classifier instructions
-                # never mutates the caller's existing conversation.
-                messages = [m.model_dump(exclude_none=True) for m in request.messages]
-                if messages[0]["role"] == "system":
-                    messages[0]["content"] = system + "\n" + messages[0]["content"]
-                else:
-                    messages.insert(0, {"role": "system", "content": system})
-                messages.append({"role": "user", "content": content})
+            messages = self._messages(request, system, content)
 
             ids, output_ids = [], []
             if not render_only:
@@ -217,7 +238,42 @@ class PromptCompiler:
                     question.answer_prefix,
                 )
             )
-        return CompiledRequest(plan, branches)
+
+        cache_prefix_ids = []
+        if not render_only and branches:
+            # Render two otherwise identical branches with different synthetic
+            # contexts. Their token-level intersection cannot depend on the
+            # caller's actual content, even when that content itself is empty.
+            # Intersect those probes with every real branch as a second safety
+            # check. Native chat-template/tokenizer boundaries are therefore
+            # part of the proof; no text hash is trusted for reuse.
+            first = plan.questions[0]
+            candidates = []
+            for probe in ("A", "Z"):
+                cache_messages = self._messages(
+                    request,
+                    system,
+                    plan.suffix_instruction + first.instruction,
+                    context_probe=probe,
+                )
+                cache_text = (
+                    self.tokenizer.apply_chat_template(
+                        cache_messages,
+                        tokenize=False,
+                        add_generation_prompt=True,
+                        enable_thinking=False,
+                    )
+                    + first.answer_prefix
+                )
+                candidates.append(
+                    self.tokenizer.encode(cache_text, add_special_tokens=False)
+                )
+            safe_limit = min(len(branch.token_ids) for branch in branches) - 1
+            cache_prefix_ids = common_prefix(
+                [*candidates, *[branch.token_ids for branch in branches]]
+            )[: max(safe_limit, 0)]
+
+        return CompiledRequest(plan, branches, cache_prefix_ids)
 
 
 # Inference result
@@ -276,25 +332,55 @@ def unique_prompt_tokens(sequences):
 class HFBackend:
     """Own one inference model and serialize all forwards through a thread lock."""
 
-    def __init__(self, model, *, max_batch_size=32, max_batch_tokens=32768):
-        """Set evaluation mode and bounds on padded suffix batches.
+    def __init__(
+        self,
+        model,
+        *,
+        max_batch_size=32,
+        max_batch_tokens=32768,
+        prefix_cache_entries=0,
+    ):
+        """Set batching bounds and an optional cross-request prefix-cache LRU.
 
-        max_batch_size caps rows; max_batch_tokens caps rows times suffix width.
-        Neither bounds the prefix prefill or cache memory. The tokenizer/compiler
-        enforces the full model-context limit separately.
+        Persistent caching is disabled by default because every entry retains a
+        model KV cache on the model device. Keys are exact token tuples.
         """
         if max_batch_size < 1 or max_batch_tokens < 1:
             raise ValueError("Batch limits must be positive")
+        if prefix_cache_entries < 0:
+            raise ValueError("prefix_cache_entries must be nonnegative")
         self.model = model.eval()
         self.max_batch_size = max_batch_size
         self.max_batch_tokens = max_batch_tokens
-        # Protect the model even if cancellation returns before its thread exits.
+        self.prefix_cache_entries = prefix_cache_entries
+        self._prefix_cache = OrderedDict()
+        # Protect both model execution and persistent cache mutation.
         self._lock = threading.Lock()
         # Some model classes accept selected sequence positions to avoid
         # materializing all sequence logits. Fall back to full logits otherwise.
         self._last_logits = (
             "logits_to_keep" in inspect.signature(model.forward).parameters
         )
+
+    def _prefix_cache_get(self, token_ids):
+        """Return an exact-token seed and promote it in the LRU."""
+        if not self.prefix_cache_entries or not token_ids:
+            return None
+        key = tuple(token_ids)
+        cache = self._prefix_cache.pop(key, None)
+        if cache is not None:
+            self._prefix_cache[key] = cache
+        return cache
+
+    def _prefix_cache_put(self, token_ids, cache):
+        """Insert one immutable seed and evict least-recently-used entries."""
+        if not self.prefix_cache_entries or not token_ids or cache is None:
+            return
+        key = tuple(token_ids)
+        self._prefix_cache.pop(key, None)
+        self._prefix_cache[key] = cache
+        while len(self._prefix_cache) > self.prefix_cache_entries:
+            self._prefix_cache.popitem(last=False)
 
     async def score(self, compiled):
         """Run blocking model work in a worker thread with cooperative cancellation.
@@ -329,9 +415,79 @@ class HFBackend:
             extra = {"logits_to_keep": 1} if self._last_logits else {}
             cache = None
             forwards = 0
-            if prefix:
-                # This is one unchunked forward. The returned cache is the seed;
-                # no suffix batch may mutate it or reuse another batch's cache.
+            computed_prefix_tokens = 0
+            persistent_status = (
+                "disabled" if self.prefix_cache_entries == 0 else "unavailable"
+            )
+            persistent_hit_tokens = 0
+
+            # Re-check compiler metadata at execution time so custom compilers
+            # cannot trigger reuse unless the candidate is an exact prefix of
+            # this request's real shared prefix.
+            persistent_prefix = list(
+                getattr(compiled, "cache_prefix_ids", []) or []
+            )
+            persistent_safe = (
+                bool(prefix)
+                and bool(persistent_prefix)
+                and len(persistent_prefix) <= len(prefix)
+                and prefix[: len(persistent_prefix)] == persistent_prefix
+            )
+
+            if prefix and self.prefix_cache_entries and persistent_safe:
+                cache = self._prefix_cache_get(persistent_prefix)
+                if cache is None:
+                    ids = torch.tensor([persistent_prefix], device=device)
+                    out = self.model(
+                        input_ids=ids,
+                        attention_mask=torch.ones_like(ids),
+                        use_cache=True,
+                        **extra,
+                    )
+                    cache = out.past_key_values
+                    if cache is None or not hasattr(cache, "reorder_cache"):
+                        raise ValueError(
+                            "Model must expose a reorderable Transformers cache"
+                        )
+                    self._prefix_cache_put(persistent_prefix, cache)
+                    del out
+                    forwards += 1
+                    computed_prefix_tokens += len(persistent_prefix)
+                    persistent_status = "miss"
+                else:
+                    persistent_status = "hit"
+                    persistent_hit_tokens = len(persistent_prefix)
+
+                remainder = prefix[len(persistent_prefix) :]
+                if remainder:
+                    # Never extend the persistent object itself: keep LRU entries
+                    # immutable and request-local mutation on a private copy.
+                    request_cache = copy.deepcopy(cache)
+                    ids = torch.tensor([remainder], device=device)
+                    mask = torch.ones(
+                        (1, len(prefix)), dtype=torch.long, device=device
+                    )
+                    positions = torch.arange(
+                        len(persistent_prefix), len(prefix), device=device
+                    ).unsqueeze(0)
+                    out = self.model(
+                        input_ids=ids,
+                        attention_mask=mask,
+                        position_ids=positions,
+                        past_key_values=request_cache,
+                        use_cache=True,
+                        **extra,
+                    )
+                    cache = out.past_key_values
+                    if cache is None or not hasattr(cache, "reorder_cache"):
+                        raise ValueError(
+                            "Model must expose a reorderable Transformers cache"
+                        )
+                    del out, request_cache
+                    forwards += 1
+                    computed_prefix_tokens += len(remainder)
+            elif prefix:
+                # Default behavior: one request-local shared-prefix prefill.
                 ids = torch.tensor([prefix], device=device)
                 out = self.model(
                     input_ids=ids,
@@ -346,6 +502,7 @@ class HFBackend:
                     )
                 del out
                 forwards += 1
+                computed_prefix_tokens += len(prefix)
             lengths = [len(ids) - len(prefix) for ids in sequences]
             if max(lengths) > self.max_batch_tokens:
                 raise ValueError("A question suffix exceeds max_batch_tokens")
@@ -435,9 +592,16 @@ class HFBackend:
                     # logical_prefill_tokens omits padding, still counting overlap
                     # beyond the one shared prefix separately per branch.
                     "branch_prompt_tokens": sum(map(len, sequences)),
-                    "computed_prompt_tokens": len(prefix) + padded_tokens,
+                    "computed_prompt_tokens": computed_prefix_tokens + padded_tokens,
+                    "computed_prefix_tokens": computed_prefix_tokens,
                     "logical_prefill_tokens": len(prefix) + sum(lengths),
                     "padded_suffix_tokens": padded_tokens,
+                    "persistent_prefix_cache": persistent_status,
+                    "persistent_prefix_tokens": (
+                        len(persistent_prefix) if persistent_safe else 0
+                    ),
+                    "persistent_prefix_hit_tokens": persistent_hit_tokens,
+                    "persistent_prefix_cache_entries": len(self._prefix_cache),
                     "branch_output_tokens": 0,
                     "scored_positions": len(sequences),
                     "backend_seconds": time.perf_counter() - start,
@@ -716,6 +880,7 @@ def load_service(
     max_batch_size=32,
     max_batch_tokens=32768,
     max_request_branches=100,
+    prefix_cache_entries=0,
 ):
     """Load a model and return a ready-to-use service, without starting HTTP.
 
@@ -761,6 +926,7 @@ def load_service(
         model,
         max_batch_size=max_batch_size,
         max_batch_tokens=max_batch_tokens,
+        prefix_cache_entries=prefix_cache_entries,
     )
     return DecisionService(
         model_name,
@@ -792,6 +958,12 @@ def main():
     parser.add_argument("--max-batch-size", type=int, default=32)
     parser.add_argument("--max-batch-tokens", type=int, default=32768)
     parser.add_argument("--max-request-branches", type=int, default=100)
+    parser.add_argument(
+        "--prefix-cache-entries",
+        type=int,
+        default=0,
+        help="LRU entries for exact cross-request KV prefixes; 0 disables",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = vars(parser.parse_args())
