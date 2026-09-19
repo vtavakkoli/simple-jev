@@ -59,6 +59,16 @@ def test_compiler_renders_common_plan_and_checks_real_boundaries():
     )
 
 
+def test_compiler_derives_exact_context_independent_cache_prefix():
+    """Persistent candidate is a nonempty exact prefix of every real branch."""
+    compiled = PromptCompiler(Tokenizer()).compile(request())
+    assert compiled.cache_prefix_ids
+    for branch in compiled.branches:
+        size = len(compiled.cache_prefix_ids)
+        assert branch.token_ids[:size] == compiled.cache_prefix_ids
+        assert size < len(branch.token_ids)
+
+
 def test_chat_roles_are_preserved_without_mutating_request():
     """Merge a leading system turn into copies while retaining caller-owned history."""
     body = request()
