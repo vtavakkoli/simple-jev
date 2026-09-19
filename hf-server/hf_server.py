@@ -126,15 +126,15 @@ class PromptCompiler:
         self.version = version
 
     @staticmethod
-    def _messages(request, system, content, *, blank_context=False):
-        """Build one branch, optionally replacing caller context with blanks.
+    def _messages(request, system, content, *, context_probe=None):
+        """Build one branch, optionally replacing caller context with probe text.
 
-        The blank rendering is only a conservative cache-prefix probe. compile()
-        intersects its token IDs with every real branch before exposing a
-        persistent-cache candidate.
+        Probe renderings are used only to locate a conservative token boundary.
+        compile() intersects two distinct probes with every real branch before
+        exposing a persistent-cache candidate.
         """
         if request.messages is None:
-            state = "" if blank_context else request.state
+            state = request.state if context_probe is None else context_probe
             return [
                 {"role": "system", "content": system},
                 {
@@ -146,10 +146,10 @@ class PromptCompiler:
         messages = []
         for message in request.messages:
             item = message.model_dump(exclude_none=True)
-            if blank_context:
+            if context_probe is not None:
                 # Preserve roles because chat templates may encode them, while
-                # removing all caller-controlled conversation content.
-                item = {"role": item["role"], "content": ""}
+                # replacing all caller-controlled conversation content.
+                item = {"role": item["role"], "content": context_probe}
             messages.append(item)
         if messages[0]["role"] == "system":
             messages[0]["content"] = system + "\n" + messages[0]["content"]
@@ -241,30 +241,36 @@ class PromptCompiler:
 
         cache_prefix_ids = []
         if not render_only and branches:
-            # Render an otherwise identical branch with caller-controlled context
-            # blanked, then retain only token IDs that are also an exact prefix
-            # of every real branch. Native chat-template/tokenizer boundaries are
-            # therefore part of the proof; no text hash is trusted for reuse.
+            # Render two otherwise identical branches with different synthetic
+            # contexts. Their token-level intersection cannot depend on the
+            # caller's actual content, even when that content itself is empty.
+            # Intersect those probes with every real branch as a second safety
+            # check. Native chat-template/tokenizer boundaries are therefore
+            # part of the proof; no text hash is trusted for reuse.
             first = plan.questions[0]
-            cache_messages = self._messages(
-                request,
-                system,
-                plan.suffix_instruction + first.instruction,
-                blank_context=True,
-            )
-            cache_text = (
-                self.tokenizer.apply_chat_template(
-                    cache_messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=False,
+            candidates = []
+            for probe in ("", "\u241f"):
+                cache_messages = self._messages(
+                    request,
+                    system,
+                    plan.suffix_instruction + first.instruction,
+                    context_probe=probe,
                 )
-                + first.answer_prefix
-            )
-            candidate = self.tokenizer.encode(cache_text, add_special_tokens=False)
+                cache_text = (
+                    self.tokenizer.apply_chat_template(
+                        cache_messages,
+                        tokenize=False,
+                        add_generation_prompt=True,
+                        enable_thinking=False,
+                    )
+                    + first.answer_prefix
+                )
+                candidates.append(
+                    self.tokenizer.encode(cache_text, add_special_tokens=False)
+                )
             safe_limit = min(len(branch.token_ids) for branch in branches) - 1
             cache_prefix_ids = common_prefix(
-                [candidate, *[branch.token_ids for branch in branches]]
+                [*candidates, *[branch.token_ids for branch in branches]]
             )[: max(safe_limit, 0)]
 
         return CompiledRequest(plan, branches, cache_prefix_ids)
