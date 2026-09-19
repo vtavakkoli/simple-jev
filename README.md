@@ -256,6 +256,14 @@ If all four suffixes fit in one batch, the shared execution takes one prefix for
 
 The version fixes one prompt/scoring configuration so implementations can stay consistent, including implementations in other languages. It defaults to `v1`; the HTTP API currently uses that version. There are no per-request independent/rating modes or score-format switches.
 
+## Gymnasium control notebook
+
+Open [Ollama_Jev_Gymnasium.ipynb](notebooks/Ollama_Jev_Gymnasium.ipynb) in local Jupyter to test CartPole, Pendulum, and HalfCheetah running. The notebook includes seeded baseline comparisons, episode rewards, request latency, decision logs, and video recording.
+
+Start Ollama, install a model, and set `OLLAMA_MODEL` to its exact name. Run CartPole first; the optional HalfCheetah cell controls six joints using discrete torque levels. To compare native Simple Jev, start the HF server, configure `JEV_URL` and `JEV_MODEL`, and add `"jev"` to the methods.
+
+The Ollama adapter generates structured JSON through `/api/chat`; it does **not** reproduce Simple Jev's logits-only inference. Simulation pauses during API requests, so video playback does not demonstrate real-time control. A general language model is not a trained locomotion policy; task performance must be measured.
+
 ## Testing
 
 From the repository root, with the environment activated:
