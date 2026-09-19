@@ -258,9 +258,9 @@ The version fixes one prompt/scoring configuration so implementations can stay c
 
 ## Gymnasium control notebook
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/vtavakkoli/simple-jev/blob/main/notebooks/Ollama_Jev_Gymnasium.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/vtavakkoli/simple-jev/blob/main/notebooks/Jev_Gymnasium.ipynb)
 
-Open [Ollama_Jev_Gymnasium.ipynb](notebooks/Ollama_Jev_Gymnasium.ipynb), select a GPU runtime, and run all cells. The notebook installs the HF server, downloads `Qwen/Qwen3.5-0.8B`, and starts native Simple Jev on loopback inside the same Colab runtime. CPU execution is also supported. The existing filename is retained for link compatibility; Ollama and an external server are not required.
+Open [Jev_Gymnasium.ipynb](notebooks/Jev_Gymnasium.ipynb), select a GPU runtime, and run all cells. The notebook installs the HF server, downloads `Qwen/Qwen3.5-0.8B`, and starts native Simple Jev on loopback inside the same Colab runtime. CPU execution is also supported. The existing filename is retained for link compatibility; Ollama and an external server are not required.
 
 The notebook checks server readiness, shows one model decision, and compares native `/v1/classifier` control against seeded baselines, with episode rewards, request latency, decision logs, and video recording. CartPole is the default; Pendulum is available in the environment selector. Enable the optional HalfCheetah checkbox to test six-joint running with discrete torque levels.
 
