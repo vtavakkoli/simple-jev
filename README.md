@@ -268,6 +268,15 @@ The server code is pinned to a recorded revision. Re-running the startup cell st
 
 Simulation pauses during API requests, so video playback does not demonstrate real-time control. A general language model is not a trained locomotion policy; task performance must be measured. The notebook includes a real inference probe for your run; no Qwen benchmark results are pre-filled.
 
+
+### BipedalWalker Colab: can Qwen really walk?
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/vtavakkoli/simple-jev/blob/main/notebooks/Qwen_Jev_BipedalWalker_Colab.ipynb)
+
+The [Qwen Jev BipedalWalker Colab](notebooks/Qwen_Jev_BipedalWalker_Colab.ipynb) runs **Qwen/Qwen3.5-0.8B** through the local Hugging Face server and tests four motor commands on Gymnasium's Box2D walker. It compares native Jev decisions with Gymnasium's continuous heuristic, a quantized heuristic, and random actions. The notebook records videos, forward distance, returns, falls, foot-contact alternation, course completion, API latency, raw decisions, and failure states. It does not claim that a short clip proves walking; use the optional five-seed full evaluation for a meaningful result.
+
+The setup installs the Box2D extra, starts the HF server inside the Colab runtime, and keeps evaluation position data out of the model prompt. Internet is needed for installation and the first model download; inference remains on the selected Colab runtime.
+
 ## Testing
 
 From the repository root, with the environment activated:
