@@ -272,7 +272,7 @@ values), `probabilities` (nine values), `expected_score`, `variance`, and `entro
 | --- | --- |
 | `backend` | `transformers` |
 | `prefill_strategy` | `shared_prefix` |
-| `prefix_tokens` | Length of the shared prefix actually evaluated once. At least one token is left for each suffix, even for identical prompts. |
+| `prefix_tokens` | Logical request-level shared prefix length. At least one token is left for each suffix, even for identical prompts; persistent hits may avoid evaluating part of it. |
 | `suffix_batch_sizes` | Number of question/candidate branches in each suffix forward. |
 | `engine_forwards` | Prefix forward, if any, plus suffix forwards. These are model calls, not HTTP calls. |
 | `branch_prompt_tokens` | Sum of all complete branch lengths, including repeated prefixes. |
