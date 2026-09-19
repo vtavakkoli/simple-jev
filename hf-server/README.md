@@ -18,8 +18,7 @@ source .venv/bin/activate
 pip install -e './hf-server[test]'
 simple-jev --model /path/to/downloaded/model --device auto \
   --dtype bfloat16 --max-model-len 32768 \
-  --max-batch-size 32 --max-batch-tokens 32768 \
-  --prefix-cache-entries 8 --port 8000
+  --max-batch-size 32 --max-batch-tokens 32768 --port 8000
 ```
 
 Or run the file directly from the checkout:
@@ -98,9 +97,16 @@ candidate against the real request prefix again before use. Cached seeds are
 never extended in place; request-specific work starts from a deep copy.
 
 Persistent caching is disabled by default (`0`) because each entry retains KV
-state on the model device. The normal request-local shared prefix remains active
-whether or not the persistent cache is enabled. The prefix itself is not chunked
-by `--max-batch-tokens`.
+state on the model device. Enable a small bounded cache when repeated requests
+share the same classifier schema:
+
+```bash
+simple-jev --model Qwen/Qwen3.5-2B --prefix-cache-entries 8
+```
+
+The normal request-local shared prefix remains active whether or not the
+persistent cache is enabled. The prefix itself is not chunked by
+`--max-batch-tokens`.
 
 ## Scope and validation
 
