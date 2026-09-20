@@ -20,6 +20,7 @@ from train import (
     compile_rows,
     decision_logits,
     metrics,
+    load_model,
 )
 from transformers import Qwen3Config, Qwen3ForCausalLM, TrainingArguments
 
@@ -117,6 +118,19 @@ def test_teacher_requests_only_missing_targets():
             "refund"
         ]
         assert set(result) == {"refund"}
+
+
+
+def test_qwen35_training_loads_text_only_causal_lm():
+    config = SimpleNamespace(model_type="qwen3_5")
+    with (
+        patch("train.AutoConfig.from_pretrained", return_value=config),
+        patch("train.Qwen3_5ForCausalLM.from_pretrained", return_value="text-model") as loader,
+    ):
+        assert load_model("Qwen/Qwen3.5-0.8B", "float16") == "text-model"
+    loader.assert_called_once_with(
+        "Qwen/Qwen3.5-0.8B", revision=None, dtype=torch.float16
+    )
 
 
 def test_prompt_compilation_preserves_full_briefing():

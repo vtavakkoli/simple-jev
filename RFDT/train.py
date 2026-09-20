@@ -19,6 +19,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForImageTextToText,
     AutoTokenizer,
+    Qwen3_5ForCausalLM,
     Trainer,
     TrainingArguments,
     set_seed,
@@ -32,11 +33,17 @@ def load_model(name, dtype, revision=None):
     is deliberately absent: inference placement is not distributed training.
     """
     config = AutoConfig.from_pretrained(name, revision=revision)
-    loader = (
-        AutoModelForImageTextToText
-        if config.model_type in {"gemma4", "qwen3_5", "qwen3_5_moe"}
-        else AutoModelForCausalLM
-    )
+    if config.model_type == "qwen3_5":
+        # Qwen3.5 publishes one checkpoint that can be loaded through either the
+        # multimodal wrapper or the text-only causal LM. RFDT only supplies text,
+        # so avoid instantiating/adapting the unused vision stack.
+        loader = Qwen3_5ForCausalLM
+    else:
+        loader = (
+            AutoModelForImageTextToText
+            if config.model_type in {"gemma4", "qwen3_5_moe"}
+            else AutoModelForCausalLM
+        )
     return loader.from_pretrained(name, revision=revision, dtype=getattr(torch, dtype))
 
 
