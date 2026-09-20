@@ -139,11 +139,14 @@ def test_prompt_compilation_preserves_full_briefing():
 
 
 def test_mask_selects_real_position_and_only_allowed_logits():
-    logits = torch.randn(2, 4, 12, requires_grad=True)
+    full_logits = torch.randn(2, 4, 12, requires_grad=True)
+    seen = {}
 
     class Model:
         def __call__(self, **kwargs):
-            return SimpleNamespace(logits=logits)
+            keep = kwargs["logits_to_keep"]
+            seen["keep"] = keep.detach().cpu().tolist()
+            return SimpleNamespace(logits=full_logits[:, keep, :])
 
     batch = DecisionCollator(0)(
         [
@@ -158,11 +161,30 @@ def test_mask_selects_real_position_and_only_allowed_logits():
     selected = decision_logits(Model(), batch)
     loss = -(batch["labels"] * selected.log_softmax(-1)).sum(-1).mean()
     loss.backward()
-    expected = torch.zeros_like(logits, dtype=torch.bool)
+    expected = torch.zeros_like(full_logits, dtype=torch.bool)
     expected[0, 1, [3, 5]] = True
     expected[1, 3, [6, 7, 8]] = True
-    assert torch.equal(logits.grad != 0, expected)
+    assert seen["keep"] == [1, 3]
+    assert torch.equal(full_logits.grad != 0, expected)
     assert torch.isfinite(loss)
+
+
+def test_decision_logits_falls_back_for_models_without_logits_to_keep():
+    logits = torch.randn(1, 3, 10, requires_grad=True)
+
+    class OldModel:
+        def __call__(self, input_ids, attention_mask, use_cache=False):
+            return SimpleNamespace(logits=logits)
+
+    batch = DecisionCollator(0)(
+        [{"input_ids": [1, 2, 3], "allowed_ids": [4, 5], "labels": [1.0, 0.0]}]
+    )
+    selected = decision_logits(OldModel(), batch)
+    assert selected.shape == (1, 2)
+    selected.sum().backward()
+    expected = torch.zeros_like(logits, dtype=torch.bool)
+    expected[0, 2, [4, 5]] = True
+    assert torch.equal(logits.grad != 0, expected)
 
 
 def test_tiny_training_decreases_loss_and_updates_context(tmp_path):

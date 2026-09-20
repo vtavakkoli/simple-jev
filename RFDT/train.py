@@ -99,21 +99,43 @@ class DecisionCollator:
 
 
 def decision_logits(model, inputs):
-    """Gather the real final position BEFORE restricting to each row's labels.
+    """Score only each row's real final prompt position, then allowed labels.
 
-    This portable first implementation materializes vocabulary logits for all
-    positions. Small batches and gradient checkpointing are recommended. A later
-    optimization can project only answer positions without changing this loss.
+    Modern Transformers causal-LM heads (including Qwen3/Qwen3.5) accept
+    logits_to_keep. Passing the unique real final positions avoids materializing
+    [batch, sequence, vocab] logits for every prompt token. That is critical for
+    long RFDT prompts with large vocabularies, while preserving the same loss.
     """
-    outputs = model(
-        input_ids=inputs["input_ids"],
-        attention_mask=inputs["attention_mask"],
-        use_cache=False,
-    )
     positions = inputs["attention_mask"].sum(dim=1) - 1
-    final = outputs.logits[
-        torch.arange(len(positions), device=positions.device), positions
-    ]
+    keep = torch.unique(positions, sorted=True)
+    forward_kwargs = {
+        "input_ids": inputs["input_ids"],
+        "attention_mask": inputs["attention_mask"],
+        "use_cache": False,
+        "logits_to_keep": keep,
+    }
+    try:
+        outputs = model(**forward_kwargs)
+        # logits_to_keep indexes the sequence axis. Each batch row receives the
+        # same compact set of requested positions; select that row's real final one.
+        compact_positions = torch.searchsorted(keep, positions)
+        final = outputs.logits[
+            torch.arange(len(positions), device=positions.device), compact_positions
+        ]
+    except TypeError as exc:
+        # Keep RFDT portable for older/custom causal LMs that do not yet expose
+        # logits_to_keep. Do not mask unrelated TypeErrors raised by model code.
+        message = str(exc)
+        if "logits_to_keep" not in message or (
+            "unexpected keyword" not in message and "unexpected keyword argument" not in message
+        ):
+            raise
+        forward_kwargs.pop("logits_to_keep")
+        outputs = model(**forward_kwargs)
+        final = outputs.logits[
+            torch.arange(len(positions), device=positions.device), positions
+        ]
+
     selected = final.gather(1, inputs["allowed_ids"]).float()
     # A finite sentinel avoids 0 * -inf in soft-label cross entropy.
     return selected.masked_fill(~inputs["allowed_mask"], -1e9)
