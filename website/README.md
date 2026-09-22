@@ -1,4 +1,10 @@
-# simple-jev.com — static site
+# JEV Lab website
+
+The community fork uses a new SVG identity and a hosted-JEV getting-started page (`jev.html`). Authenticated JEV calls run in Python; the browser playground remains the public Featherless Simple Jev demo. `assets/jev-mark.svg`, `jev-banner.svg` and `jev-architecture.svg` are the new editable visuals.
+
+Deployment is opt-in. Set repository variables `DEPLOY_WEBSITE=true`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, and the secret `CLOUDFLARE_API_TOKEN` for your own hosting. This fork does not target upstream production by default.
+
+## Existing playground implementation
 
 A demo-first design for Simple Jev. Plain HTML, CSS, and JavaScript; no build, framework, keys, or website backend.
 
@@ -45,8 +51,8 @@ Open the [playground](http://127.0.0.1:8765/) or the [API documentation](http://
 - `demo.js`: dynamic editor, model discovery, classification, result rendering, and copy controls.
 - `playground.mjs`: scenario/question examples, request construction, and response validation.
 - `tests/playground.test.mjs`: offline request/response contract tests (`node --test website/tests/playground.test.mjs`).
-- `assets/simple-jev.png`: the official Simple Jev mascot badge, used as the logo and favicon.
-- `assets/featherless_logo_dark.svg`: supplied Featherless logo for the “Built by Featherless.ai” attribution.
+- `assets/jev-mark.svg`: community fork mark used as the logo and favicon; the original mascot image remains for historical references.
+- `assets/featherless_logo_dark.svg`: supplied Featherless logo for the “Based on Featherless Simple Jev” attribution.
 
 ## API behavior
 

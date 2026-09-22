@@ -1862,3 +1862,36 @@ input:focus-visible {
 .home-demo-card .vision-preview {
   height: 180px;
 }
+
+/* Community fork visual identity: quiet paper, deep teal, mint accents. */
+:root { --ink:#173b3d; --paper:#f4f7f2; --muted:#536b64; --line:#d5e2d9; --lime:#b9edce; --orange:#9a4824; }
+.site-header { gap:24px; }
+.site-header nav { flex-wrap:wrap; }
+.hero { padding-top:70px; padding-bottom:60px; }
+.hero h1 { letter-spacing:-.055em; }
+.hero-subheading { max-width:650px; }
+.jev-actions { display:flex; flex-wrap:wrap; gap:12px; margin:28px 0 18px; }
+.jev-primary,.jev-secondary { display:inline-block; padding:13px 19px; border-radius:9px; font-weight:650; border:1px solid var(--ink); }
+.jev-primary { background:var(--ink); color:white; }
+.jev-secondary { background:white; }
+.jev-caption { font-size:13px; color:var(--muted); }
+.hero-aside.jev-art { width:100%; max-width:550px; }
+.hero-aside.jev-art img { width:100%; height:auto; max-width:none; border-radius:20px; box-shadow:0 20px 50px #183c3b18; }
+.jev-engines { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-bottom:65px; }
+.jev-engines article { padding:28px; background:white; border:1px solid var(--line); border-radius:16px; }
+.jev-engines h2 { font-size:25px; line-height:1.2; margin:18px 0 14px; }
+.jev-engines p:not(.eyebrow) { font-size:16px; color:var(--muted); }
+.jev-engines a { display:inline-block; font-weight:650; margin-top:22px; text-decoration:underline; text-underline-offset:5px; }
+.jev-guide { max-width:1000px; padding-top:60px; padding-bottom:70px; }
+.jev-guide h1 { font-size:clamp(36px,6vw,66px); letter-spacing:-.04em; line-height:1.06; margin:18px 0 25px; }
+.jev-guide h2 { font-size:28px; margin:38px 0 16px; }
+.jev-guide p { margin:12px 0; max-width:800px; }
+.jev-guide pre { overflow:auto; padding:24px; background:#173b3d; color:#e5f5e9; border-radius:12px; }
+.jev-guide a:not(.jev-primary) { text-decoration:underline; text-underline-offset:4px; }
+.jev-guide img { width:100%; height:auto; margin-top:22px; }
+@media(max-width:900px) { .jev-engines {grid-template-columns:1fr;} .hero {grid-template-columns:1fr;} .hero-aside.jev-art {max-width:100%;} }
+.hero { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:40px; }
+.hero-aside.jev-art { display:block; padding:0; }
+.hero-aside.jev-art img { transform:none; }
+@media(max-width:900px) { .hero {grid-template-columns:1fr;} }
+@media(max-width:760px) { .site-header {flex-wrap:wrap; padding-block:16px;} .site-header nav > a:first-child {display:inline;} }

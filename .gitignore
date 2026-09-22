@@ -11,3 +11,8 @@ demos/jevpilot/node_modules/
 # Track deployment workflows despite the general hidden-file exclusion.
 !.github/
 !.github/**
+
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+.venv/
