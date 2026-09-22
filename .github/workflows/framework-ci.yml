@@ -48,3 +48,17 @@ jobs:
 
       - name: Run framework tests
         run: python -m pytest -c hf-server/pyproject.toml common/tests hf-server/tests -q
+
+  client-and-website:
+    name: Client and website / offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m unittest discover -s tests -v
+      - run: node --test website/tests/*.test.mjs
