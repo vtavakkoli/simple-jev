@@ -16,3 +16,8 @@ demos/jevpilot/node_modules/
 __pycache__/
 *.py[cod]
 .venv/
+
+# Packaging outputs
+build/
+dist/
+*.egg-info/
