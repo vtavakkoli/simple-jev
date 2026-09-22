@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jev-lab"
+version = "0.2.0"
+description = "Explicit hosted JEV and local Simple Jev decision workflows"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Repository = "https://github.com/vtavakkoli/simple-jev"
+Documentation = "https://github.com/vtavakkoli/simple-jev/blob/main/docs/CLIENT.md"
+Issues = "https://github.com/vtavakkoli/simple-jev/issues"
+
+[project.scripts]
+jev-lab = "jev.cli:main"
+
+[tool.setuptools]
+packages = ["jev"]

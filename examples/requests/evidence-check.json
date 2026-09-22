@@ -1,0 +1,21 @@
+{
+  "state": {
+    "source": "The release adds CSV export. Offline operation is planned for a future release.",
+    "claim": "The current version works offline."
+  },
+  "questions": {
+    "supported": {
+      "type": "noul",
+      "instructions": "Does the source support the claim about the current version?"
+    },
+    "status": {
+      "type": "choice",
+      "instructions": "How does the claim relate to the supplied source?",
+      "criteria": {
+        "supported": "Explicitly supported",
+        "contradicted": "Explicitly contradicted",
+        "insufficient": "The source does not establish either"
+      }
+    }
+  }
+}

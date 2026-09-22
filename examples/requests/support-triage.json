@@ -1,0 +1,26 @@
+{
+  "state": "Our account was billed twice. Please refund the duplicate payment.",
+  "questions": {
+    "team": {
+      "type": "choice",
+      "instructions": "Which team should handle this request?",
+      "criteria": {
+        "billing": "Invoices and payments",
+        "technical": "Product faults"
+      }
+    },
+    "impact": {
+      "type": "score",
+      "instructions": "Rate the reported operational impact.",
+      "criteria": [
+        "No disruption",
+        "Work slowed",
+        "Work blocked"
+      ]
+    },
+    "refund": {
+      "type": "noul",
+      "instructions": "Does the sender explicitly request a refund?"
+    }
+  }
+}
